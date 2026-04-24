@@ -242,7 +242,7 @@
             <div class="bg-[var(--card-bg)] p-6 rounded-xl shadow-sm border border-[var(--border-color)] text-center sticky top-20 transition-colors">
                 <div class="w-24 h-24 bg-gradient-to-tr from-blue-600 to-amber-400 rounded-full p-1 mx-auto mb-4 shadow-sm">
                     <div class="w-full h-full bg-[var(--card-bg)] rounded-full flex items-center justify-center overflow-hidden border-2 border-[var(--card-bg)]">
-                        <img src="IMG_3600.jpg" alt="Nomad Dad" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150?text=Nomad+Dad'">
+                        <img src="profile.jpg" alt="Nomad Dad" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150?text=Nomad+Dad'">
                     </div>
                 </div>
                 <h2 class="text-lg font-bold text-[var(--text-primary)]">Nomad Dad</h2>
@@ -263,7 +263,7 @@
             <div class="bg-[var(--card-bg)] p-4 rounded-xl shadow-sm border border-[var(--border-color)] mb-4 transition-colors">
                 <div class="flex items-center space-x-3">
                     <div class="w-9 h-9 rounded-full overflow-hidden border border-[var(--border-color)] flex-shrink-0">
-                        <img src="IMG_3600.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                        <img src="profile.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
                     </div>
                     <div onclick="openModal()" class="flex-grow bg-[var(--hover-bg)] hover:opacity-80 text-[var(--text-secondary)] text-left px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-all">
                         What's the perspective today, Keith?
@@ -298,16 +298,16 @@
             <div class="p-4">
                 <div class="flex items-center space-x-3 mb-4">
                     <div class="w-10 h-10 rounded-full overflow-hidden border border-[var(--border-color)]">
-                        <img src="IMG_3600.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                        <img src="profile.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
                     </div>
                     <div>
                         <h4 class="font-bold text-sm">Nomad Dad</h4>
                         <select id="post-category" class="text-[11px] bg-[var(--hover-bg)] border-none rounded-md px-1 py-0.5 font-medium text-[var(--text-secondary)] focus:ring-0">
-                            <option value="travel">Mile Post</option>
-                            <option value="vlog">Vlog</option>
-                            <option value="forex">Forex Signal</option>
-                            <option value="music">Soundtrack</option>
-                            <option value="rabbit">Rabbit Hole</option>
+                            <option value="1">Mile Post</option>
+                            <option value="2">Vlog</option>
+                            <option value="3">Forex Signal</option>
+                            <option value="4">Soundtrack</option>
+                            <option value="5">Rabbit Hole</option>
                         </select>
                     </div>
                 </div>
@@ -316,8 +316,8 @@
                 <textarea id="post-content" placeholder="What's the perspective today?" class="w-full h-32 text-xl border-none focus:ring-0 resize-none px-0"></textarea>
             </div>
             
-            <div class="p-4">
-                <button onclick="submitPost()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-md transition-colors shadow-sm">
+            <div class="p-4 border-t border-[var(--border-color)] flex justify-end">
+                <button id="submit-btn" onclick="submitPost()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2 rounded-md transition-colors shadow-sm disabled:opacity-50">
                     Post
                 </button>
             </div>
@@ -325,20 +325,22 @@
     </div>
 
     <script>
-        const WP_API_URL = 'http://62.72.5.1/wp-json/wp/v2/posts?_embed&per_page=20';
+        const WP_API_URL = 'http://62.72.5.1/wp-json/wp/v2/posts';
         let allPosts = [];
         let currentCategory = 'all';
 
-        // Mapping WP Category IDs to our UI slugs
-        // Default WP 'Uncategorized' is 1. We'll map others as they are created.
+        // Mapping WP Category IDs to our UI slugs (adjust based on your WP setup)
         const categoryMap = {
-            1: 'travel', // Defaulting uncategorized to 'travel' for now
-            // Add other ID mappings here as they are discovered
+            1: 'travel',
+            2: 'vlog',
+            3: 'forex',
+            4: 'music',
+            5: 'rabbit'
         };
 
         async function fetchPosts() {
             try {
-                const response = await fetch(WP_API_URL);
+                const response = await fetch(`${WP_API_URL}?_embed&per_page=20`);
                 const wpPosts = await response.json();
                 
                 allPosts = wpPosts.map(wpPost => {
@@ -352,7 +354,7 @@
                         category: categoryMap[wpPost.categories[0]] || 'travel',
                         title: wpPost.title.rendered,
                         content: content,
-                        likes: Math.floor(Math.random() * 20), // WP doesn't have native likes, using placeholder
+                        likes: Math.floor(Math.random() * 20),
                         wpLink: wpPost.link
                     };
                 });
@@ -360,7 +362,7 @@
                 renderPosts();
             } catch (error) {
                 console.error("Error fetching posts:", error);
-                document.getElementById('posts-container').innerHTML = `<p class="text-center p-4 text-[var(--text-secondary)]">Failed to load posts from WordPress. Check server status.</p>`;
+                document.getElementById('posts-container').innerHTML = `<p class="text-center p-4 text-[var(--text-secondary)]">Failed to load posts from WordPress.</p>`;
             }
         }
 
@@ -391,7 +393,7 @@
                 postEl.innerHTML = `
                     <div class="p-3 flex items-center space-x-2 border-b border-[var(--border-color)]">
                         <div class="w-9 h-9 rounded-full overflow-hidden border border-[var(--border-color)]">
-                            <img src="IMG_3600.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                            <img src="profile.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
                         </div>
                         <div>
                             <h4 class="font-bold text-sm text-[var(--text-primary)]">${post.author}</h4>
@@ -413,25 +415,77 @@
                         </button>
                         <a href="${post.wpLink}" target="_blank" class="btn-social">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                            <span>Open in WP</span>
+                            <span>Open</span>
                         </a>
                     </div>
                     <div id="comments-${post.id}" class="comment-section">
                         <div class="comment-input-container">
                             <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border border-[var(--border-color)]">
-                                <img src="IMG_3600.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                                <img src="profile.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
                             </div>
                             <div class="flex-grow relative">
                                 <input type="text" placeholder="Write a comment..." class="w-full bg-[var(--hover-bg)] border-none rounded-full px-4 py-1.5 text-sm focus:ring-1 focus:ring-blue-100 transition-all text-[var(--text-primary)]" onkeypress="if(event.key === 'Enter') submitComment(${post.id}, this)">
                             </div>
                         </div>
-                        <div class="comment-list space-y-3">
-                            <!-- Comments will be listed here -->
-                        </div>
+                        <div class="comment-list space-y-3"></div>
                     </div>
                 `;
                 container.appendChild(postEl);
             });
+        }
+
+        async function submitPost() {
+            const title = document.getElementById('post-title').value;
+            const content = document.getElementById('post-content').value;
+            const categoryId = document.getElementById('post-category').value;
+            const btn = document.getElementById('submit-btn');
+            
+            if (!content.trim()) return;
+
+            // Get credentials from local storage or prompt
+            let auth = localStorage.getItem('wp_auth');
+            if (!auth) {
+                const user = "keith";
+                const pass = prompt("Enter your WordPress Application Password (xxxx xxxx xxxx xxxx):");
+                if (!pass) return;
+                auth = btoa(`${user}:${pass.replace(/\s/g, '')}`);
+                localStorage.setItem('wp_auth', auth);
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = "Posting...";
+
+            try {
+                const response = await fetch(WP_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Basic ${auth}`
+                    },
+                    body: JSON.stringify({
+                        title: title || "New Perspective",
+                        content: content,
+                        status: 'publish',
+                        categories: [parseInt(categoryId)]
+                    })
+                });
+
+                if (response.ok) {
+                    document.getElementById('post-title').value = '';
+                    document.getElementById('post-content').value = '';
+                    closeModal();
+                    await fetchPosts(); // Refresh feed
+                } else {
+                    const err = await response.json();
+                    alert(`Error: ${err.message}`);
+                    if (response.status === 401) localStorage.removeItem('wp_auth');
+                }
+            } catch (e) {
+                alert(`Connection failed: ${e.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = "Post";
+            }
         }
 
         function filterContent(category, button) {
@@ -463,13 +517,12 @@
         function submitComment(postId, input) {
             const text = input.value.trim();
             if (!text) return;
-
             const commentList = document.querySelector(`#comments-${postId} .comment-list`);
             const commentEl = document.createElement('div');
             commentEl.className = 'flex gap-2 fade-in';
             commentEl.innerHTML = `
                 <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border border-[var(--border-color)]">
-                    <img src="IMG_3600.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
+                    <img src="profile.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
                 </div>
                 <div class="bg-[var(--hover-bg)] rounded-2xl px-3 py-2">
                     <h5 class="font-bold text-[11px] text-[var(--text-primary)]">Nomad Dad</h5>
@@ -480,20 +533,13 @@
             input.value = '';
         }
 
-        // Modal Functions
         function openModal() {
             document.getElementById('composer-modal').classList.add('active');
             document.getElementById('post-content').focus();
         }
 
-        function closeModal(event) {
+        function closeModal() {
             document.getElementById('composer-modal').classList.remove('active');
-        }
-
-        function submitPost() {
-            // Placeholder: In a real app, this would use a POST request with an App Password
-            alert("WordPress integration for POSTING requires an Application Password. For now, this is a visual confirmation.");
-            closeModal();
         }
 
         function toggleTheme() {
@@ -504,10 +550,7 @@
             localStorage.setItem('theme', isDark ? 'dark' : 'light');
         }
 
-        if (localStorage.getItem('theme') === 'dark') {
-            toggleTheme();
-        }
-        
+        if (localStorage.getItem('theme') === 'dark') toggleTheme();
         document.addEventListener('DOMContentLoaded', fetchPosts);
     </script>
 </body>
