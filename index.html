@@ -375,6 +375,32 @@
             return doc.body.innerText.trim();
         }
 
+        function formatContent(text) {
+            let html = text;
+            let youtubeEmbeds = '';
+
+            const ytRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/gi;
+            let match;
+            const embeddedIds = new Set();
+            while ((match = ytRegex.exec(text)) !== null) {
+                const videoId = match[1];
+                if (!embeddedIds.has(videoId)) {
+                    embeddedIds.add(videoId);
+                    youtubeEmbeds += `<div class="mt-3 relative w-full overflow-hidden rounded-lg" style="padding-top: 56.25%;">
+                        <iframe class="absolute top-0 left-0 w-full h-full" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                    </div>`;
+                }
+            }
+
+            // Simple URL regex for linking
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            html = html.replace(urlRegex, function(url) {
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline break-all">${url}</a>`;
+            });
+
+            return { html, embeds: youtubeEmbeds };
+        }
+
         // Mapping WP Category IDs to our UI slugs (adjust based on your WP setup)
         const categoryMap = {
             1: 'travel',
@@ -392,8 +418,9 @@
                 allPosts = wpPosts.map(wpPost => {
                     const media = getPostMedia(wpPost);
                     const text = getPostText(wpPost.content.rendered);
+                    const formatted = formatContent(text);
                     
-                    let contentHtml = `<p class="whitespace-pre-wrap">${text}</p>`;
+                    let contentHtml = `<p class="whitespace-pre-wrap">${formatted.html}</p>${formatted.embeds}`;
                     if (media.url) {
                         if (media.type === 'video') {
                             contentHtml += `<video controls src="${media.url}" class="w-full mt-3 rounded-lg object-contain bg-black" style="max-height: 500px;"></video>`;
