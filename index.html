@@ -416,12 +416,57 @@
         };
 
         const reverseCategoryMap = {
-            'travel': 1,
+'travel': 1,
             'vlog': 2,
             'forex': 3,
             'music': 4,
             'rabbit': 5
         };
+
+        function mapWpPost(wpPost) {
+            const media = getPostMedia(wpPost);
+            const text = getPostText(wpPost.content.rendered);
+            const formatted = formatContent(text);
+            
+            let contentHtml = `<p class="whitespace-pre-wrap">${formatted.html}</p>${formatted.embeds}`;
+            if (media.url) {
+                if (media.type === 'video') {
+                    contentHtml += `<video controls src="${media.url}" class="w-full mt-3 rounded-lg object-contain bg-black" style="max-height: 500px;"></video>`;
+                } else {
+                    contentHtml += `<img src="${media.url}" class="w-full mt-3 rounded-lg object-cover" />`;
+                }
+            }
+
+            return {
+                id: wpPost.id,
+                author: wpPost._embedded?.author?.[0]?.name || "Nomad Dad",
+                tagline: formatDate(wpPost.date),
+                categoryId: wpPost.categories[0] || 1,
+                category: categoryMap[wpPost.categories[0]] || 'travel',
+                rawTitle: getPostText(wpPost.title.rendered),
+                title: wpPost.title.rendered,
+                text: text,
+                isPinned: wpPost.sticky || false,
+                mediaUrl: media.url,
+                mediaType: media.type,
+                content: contentHtml,
+                likes: parseInt(wpPost.likes) || 0,
+                wpLink: wpPost.link
+            };
+        }
+
+        async function fetchSinglePost(postId) {
+            try {
+                const response = await fetch(`${WP_API_URL}/${postId}?_embed`);
+                if (response.ok) {
+                    const wpPost = await response.json();
+                    return mapWpPost(wpPost);
+                }
+            } catch (error) {
+                console.error("Failed to fetch single post", error);
+            }
+            return null;
+        }
 
         async function fetchPosts(append = false) {
             try {
@@ -446,37 +491,7 @@
 
                 const wpPosts = await response.json();
                 
-                const newPosts = wpPosts.map(wpPost => {
-                    const media = getPostMedia(wpPost);
-                    const text = getPostText(wpPost.content.rendered);
-                    const formatted = formatContent(text);
-                    
-                    let contentHtml = `<p class="whitespace-pre-wrap">${formatted.html}</p>${formatted.embeds}`;
-                    if (media.url) {
-                        if (media.type === 'video') {
-                            contentHtml += `<video controls src="${media.url}" class="w-full mt-3 rounded-lg object-contain bg-black" style="max-height: 500px;"></video>`;
-                        } else {
-                            contentHtml += `<img src="${media.url}" class="w-full mt-3 rounded-lg object-cover" />`;
-                        }
-                    }
-
-                    return {
-                        id: wpPost.id,
-                        author: wpPost._embedded?.author?.[0]?.name || "Nomad Dad",
-                        tagline: formatDate(wpPost.date),
-                        categoryId: wpPost.categories[0] || 1,
-                        category: categoryMap[wpPost.categories[0]] || 'travel',
-                        rawTitle: getPostText(wpPost.title.rendered),
-                        title: wpPost.title.rendered,
-                        text: text,
-                        isPinned: wpPost.sticky,
-                        mediaUrl: media.url,
-                        mediaType: media.type,
-                        content: contentHtml,
-                        likes: parseInt(wpPost.likes) || 0,
-                        wpLink: wpPost.link
-                    };
-                });
+                const newPosts = wpPosts.map(mapWpPost);
 
                 if (append) {
                     allPosts = [...allPosts, ...newPosts];
@@ -565,6 +580,10 @@
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                             <span>Open</span>
                         </a>
+                        <button class="btn-social" onclick="sharePost(${post.id}, this)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+                            <span>Share</span>
+                        </button>
                     </div>
                     <div id="comments-${post.id}" class="comment-section">
                         <div class="comment-input-container">
@@ -813,7 +832,21 @@
             const container = document.getElementById('posts-container');
             container.innerHTML = `<div class="text-center p-8 text-[var(--text-secondary)]">Loading...</div>`;
 
+            // Reset URL so deep link doesn't persist if they click a tab
+            window.history.pushState({}, '', window.location.pathname);
+
             fetchPosts(false);
+        }
+
+        function sharePost(postId, button) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('p', postId);
+            navigator.clipboard.writeText(url.toString()).then(() => {
+                const span = button.querySelector('span');
+                const originalText = span.innerText;
+                span.innerText = "Copied!";
+                setTimeout(() => span.innerText = originalText, 2000);
+            });
         }
 
         async function toggleLike(postId, button) {
@@ -940,7 +973,43 @@
         }
 
         if (localStorage.getItem('theme') === 'dark') toggleTheme();
-        document.addEventListener('DOMContentLoaded', fetchPosts);
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const deepLinkPostId = urlParams.get('p');
+            
+            if (deepLinkPostId) {
+                const singlePost = await fetchSinglePost(deepLinkPostId);
+                if (singlePost) {
+                    allPosts = [singlePost];
+                    renderPosts();
+                    
+                    // Fetch the rest of the posts in the background and append
+                    // (excluding the deep linked post)
+                    const tempCurrentPage = currentPage;
+                    const tempAllPosts = [...allPosts];
+                    
+                    await fetchPosts(true);
+                    
+                    // fetchPosts will append everything to allPosts. 
+                    // Let's remove the duplicate if it exists.
+                    allPosts = allPosts.filter((post, index, self) => 
+                        index === self.findIndex((t) => t.id === post.id)
+                    );
+                    renderPosts();
+                    
+                    // Automatically open comments for the deep linked post
+                    const commentBtn = document.querySelector(`#comments-${deepLinkPostId}`).previousElementSibling.querySelector('.btn-social:nth-child(2)');
+                    if (commentBtn) {
+                        toggleComments(deepLinkPostId, commentBtn);
+                    }
+                } else {
+                    fetchPosts();
+                }
+            } else {
+                fetchPosts();
+            }
+        });
     </script>
 </body>
 </html>
