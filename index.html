@@ -473,7 +473,7 @@
                         mediaUrl: media.url,
                         mediaType: media.type,
                         content: contentHtml,
-                        likes: Math.floor(Math.random() * 20),
+                        likes: parseInt(wpPost.likes) || 0,
                         wpLink: wpPost.link
                     };
                 });
@@ -816,39 +816,102 @@
             fetchPosts(false);
         }
 
-        function toggleLike(postId, button) {
+        async function toggleLike(postId, button) {
             const post = allPosts.find(p => p.id === postId);
             if (post) {
+                // Optimistic UI update
                 post.likes++;
                 const span = button.querySelector('span');
                 span.innerHTML = `${post.likes} Likes`;
                 button.classList.add('text-blue-600');
+                button.disabled = true;
+
+                try {
+                    await fetch(`/wp-json/fb-blog/v1/post/${postId}/like`, { method: 'POST' });
+                } catch (e) {
+                    console.error("Failed to like post", e);
+                }
             }
         }
 
-        function toggleComments(postId, button) {
+        async function toggleComments(postId, button) {
             const commentSection = document.getElementById(`comments-${postId}`);
             const isActive = commentSection.classList.toggle('active');
             button.classList.toggle('text-blue-600', isActive);
+
+            if (isActive) {
+                const commentList = commentSection.querySelector('.comment-list');
+                if (commentList.innerHTML.trim() === '') {
+                    commentList.innerHTML = '<p class="text-xs text-[var(--text-secondary)]">Loading comments...</p>';
+                    try {
+                        const response = await fetch(`/wp-json/wp/v2/comments?post=${postId}`);
+                        const comments = await response.json();
+                        commentList.innerHTML = '';
+                        if (comments.length === 0) {
+                            commentList.innerHTML = '<p class="text-xs text-[var(--text-secondary)]">No comments yet. Be the first!</p>';
+                        } else {
+                            comments.forEach(c => {
+                                const commentEl = document.createElement('div');
+                                commentEl.className = 'flex gap-2 fade-in';
+                                commentEl.innerHTML = `
+                                    <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border border-[var(--border-color)]">
+                                        <img src="${c.author_avatar_urls['24'] || 'https://via.placeholder.com/150'}" class="w-full h-full object-cover">
+                                    </div>
+                                    <div class="bg-[var(--hover-bg)] rounded-2xl px-3 py-2">
+                                        <h5 class="font-bold text-[11px] text-[var(--text-primary)]">${c.author_name}</h5>
+                                        <p class="text-xs text-[var(--text-secondary)]">${c.content.rendered.replace(/<[^>]*>?/gm, '')}</p>
+                                    </div>
+                                `;
+                                commentList.appendChild(commentEl);
+                            });
+                        }
+                    } catch (e) {
+                        commentList.innerHTML = '<p class="text-xs text-red-500">Failed to load comments.</p>';
+                    }
+                }
+            }
         }
 
-        function submitComment(postId, input) {
+        async function submitComment(postId, input) {
             const text = input.value.trim();
             if (!text) return;
-            const commentList = document.querySelector(`#comments-${postId} .comment-list`);
-            const commentEl = document.createElement('div');
-            commentEl.className = 'flex gap-2 fade-in';
-            commentEl.innerHTML = `
-                <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border border-[var(--border-color)]">
-                    <img src="profile.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
-                </div>
-                <div class="bg-[var(--hover-bg)] rounded-2xl px-3 py-2">
-                    <h5 class="font-bold text-[11px] text-[var(--text-primary)]">Nomad Dad</h5>
-                    <p class="text-xs text-[var(--text-secondary)]">${text}</p>
-                </div>
-            `;
-            commentList.appendChild(commentEl);
+            
+            input.disabled = true;
+            
+            try {
+                const response = await fetch(`/wp-json/fb-blog/v1/post/${postId}/comment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: text })
+                });
+                
+                if (response.ok) {
+                    const commentList = document.querySelector(`#comments-${postId} .comment-list`);
+                    // Remove "No comments yet" message if present
+                    if (commentList.querySelector('p')) {
+                        commentList.innerHTML = '';
+                    }
+                    
+                    const commentEl = document.createElement('div');
+                    commentEl.className = 'flex gap-2 fade-in';
+                    commentEl.innerHTML = `
+                        <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border border-[var(--border-color)]">
+                            <img src="https://via.placeholder.com/150" class="w-full h-full object-cover">
+                        </div>
+                        <div class="bg-[var(--hover-bg)] rounded-2xl px-3 py-2">
+                            <h5 class="font-bold text-[11px] text-[var(--text-primary)]">Guest</h5>
+                            <p class="text-xs text-[var(--text-secondary)]">${text}</p>
+                        </div>
+                    `;
+                    commentList.appendChild(commentEl);
+                }
+            } catch (e) {
+                console.error("Failed to submit comment", e);
+            }
+            
             input.value = '';
+            input.disabled = false;
+            input.focus();
         }
 
         function openModal() {
