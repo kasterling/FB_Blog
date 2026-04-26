@@ -291,7 +291,7 @@
     <div id="composer-modal" onclick="closeModal(event)">
         <div class="modal-content" onclick="event.stopPropagation()">
             <div class="px-4 py-4 border-b border-[var(--border-color)] flex items-center justify-between">
-                <h2 class="text-xl font-bold text-center flex-grow">Create Post</h2>
+                <h2 id="modal-title" class="text-xl font-bold text-center flex-grow">Create Post</h2>
                 <button onclick="closeModal()" class="w-8 h-8 flex items-center justify-center bg-[var(--hover-bg)] rounded-full hover:opacity-80 text-[var(--text-secondary)] transition-colors">✕</button>
             </div>
             
@@ -314,9 +314,20 @@
                 
                 <input type="text" id="post-title" placeholder="Title (optional)" class="w-full text-lg font-bold border-none focus:ring-0 mb-2 px-0" />
                 <textarea id="post-content" placeholder="What's the perspective today?" class="w-full h-32 text-xl border-none focus:ring-0 resize-none px-0"></textarea>
+                
+                <div id="media-preview-container" class="hidden relative mb-3 bg-gray-100 rounded-lg overflow-hidden border border-[var(--border-color)]">
+                    <img id="media-preview-img" class="w-full max-h-64 object-contain hidden bg-black">
+                    <video id="media-preview-video" class="w-full max-h-64 object-contain hidden bg-black" controls></video>
+                    <button onclick="clearMedia()" class="absolute top-2 right-2 bg-black bg-opacity-60 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-opacity-80 transition-all font-bold shadow-lg">✕</button>
+                </div>
             </div>
             
-            <div class="p-4 border-t border-[var(--border-color)] flex justify-end">
+            <div class="p-4 border-t border-[var(--border-color)] flex items-center justify-between">
+                <label class="cursor-pointer text-gray-500 hover:bg-gray-100 p-2 rounded-lg transition-colors flex items-center space-x-2 border border-transparent hover:border-gray-200">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" class="text-green-500"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                    <span class="text-sm font-semibold hidden sm:inline">Photo/Video</span>
+                    <input type="file" id="media-upload" class="hidden" accept="image/*,video/*" onchange="handleMediaSelect(event)">
+                </label>
                 <button id="submit-btn" onclick="submitPost()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2 rounded-md transition-colors shadow-sm disabled:opacity-50">
                     Post
                 </button>
@@ -326,8 +337,43 @@
 
     <script>
         const WP_API_URL = '/wp-json/wp/v2/posts';
-        let allPosts = [];
-        let currentCategory = 'all';
+        let editingPostId = null;
+        let selectedMediaFile = null;
+        let existingMediaUrl = null;
+        let existingMediaType = null;
+
+        function getAuthToken() {
+            let auth = localStorage.getItem('wp_auth');
+            if (!auth) {
+                const pass = prompt("Enter your WordPress Application Password (xxxx xxxx xxxx xxxx):");
+                if (!pass) return null;
+                auth = btoa(`keith:${pass.replace(/\s/g, '')}`);
+                localStorage.setItem('wp_auth', auth);
+            }
+            return auth;
+        }
+
+        function getPostMedia(wpPost) {
+            const featuredMedia = wpPost._embedded?.['wp:featuredmedia']?.[0]?.source_url;
+            if (featuredMedia) return { url: featuredMedia, type: 'image' };
+            
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(wpPost.content.rendered, 'text/html');
+            const video = doc.querySelector('video');
+            if (video) return { url: video.src, type: 'video' };
+            
+            const img = doc.querySelector('img');
+            if (img) return { url: img.src, type: 'image' };
+            
+            return { url: null, type: null };
+        }
+        
+        function getPostText(html) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            doc.querySelectorAll('img, video').forEach(el => el.remove());
+            return doc.body.innerText.trim();
+        }
 
         // Mapping WP Category IDs to our UI slugs (adjust based on your WP setup)
         const categoryMap = {
@@ -344,16 +390,30 @@
                 const wpPosts = await response.json();
                 
                 allPosts = wpPosts.map(wpPost => {
-                    const featuredMedia = wpPost._embedded?.['wp:featuredmedia']?.[0]?.source_url;
-                    const content = wpPost.content.rendered + (featuredMedia ? `<img src="${featuredMedia}" />` : '');
+                    const media = getPostMedia(wpPost);
+                    const text = getPostText(wpPost.content.rendered);
                     
+                    let contentHtml = `<p class="whitespace-pre-wrap">${text}</p>`;
+                    if (media.url) {
+                        if (media.type === 'video') {
+                            contentHtml += `<video controls src="${media.url}" class="w-full mt-3 rounded-lg object-contain bg-black" style="max-height: 500px;"></video>`;
+                        } else {
+                            contentHtml += `<img src="${media.url}" class="w-full mt-3 rounded-lg object-cover" />`;
+                        }
+                    }
+
                     return {
                         id: wpPost.id,
                         author: wpPost._embedded?.author?.[0]?.name || "Nomad Dad",
                         tagline: formatDate(wpPost.date),
+                        categoryId: wpPost.categories[0] || 1,
                         category: categoryMap[wpPost.categories[0]] || 'travel',
+                        rawTitle: getPostText(wpPost.title.rendered),
                         title: wpPost.title.rendered,
-                        content: content,
+                        text: text,
+                        mediaUrl: media.url,
+                        mediaType: media.type,
+                        content: contentHtml,
                         likes: Math.floor(Math.random() * 20),
                         wpLink: wpPost.link
                     };
@@ -392,12 +452,20 @@
                 postEl.className = 'post-card fade-in';
                 postEl.innerHTML = `
                     <div class="p-3 flex items-center space-x-2 border-b border-[var(--border-color)]">
-                        <div class="w-9 h-9 rounded-full overflow-hidden border border-[var(--border-color)]">
+                        <div class="w-9 h-9 rounded-full overflow-hidden border border-[var(--border-color)] flex-shrink-0">
                             <img src="profile.jpg" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/150'">
                         </div>
-                        <div>
+                        <div class="flex-grow">
                             <h4 class="font-bold text-sm text-[var(--text-primary)]">${post.author}</h4>
                             <p class="text-[10px] text-[var(--text-secondary)] font-medium tracking-tight">${post.tagline}</p>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="editPost(${post.id})" class="text-[var(--text-secondary)] hover:text-blue-600 transition-colors" title="Edit">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            </button>
+                            <button onclick="deletePost(${post.id})" class="text-[var(--text-secondary)] hover:text-red-600 transition-colors" title="Delete">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
                         </div>
                     </div>
                     <div class="px-5 py-4 post-body">
@@ -436,43 +504,71 @@
 
         async function submitPost() {
             const title = document.getElementById('post-title').value;
-            const content = document.getElementById('post-content').value;
+            const contentText = document.getElementById('post-content').value;
             const categoryId = document.getElementById('post-category').value;
             const btn = document.getElementById('submit-btn');
             
-            if (!content.trim()) return;
+            if (!contentText.trim() && !selectedMediaFile && !existingMediaUrl) return;
 
-            // Get credentials from local storage or prompt
-            let auth = localStorage.getItem('wp_auth');
-            if (!auth) {
-                const user = "keith";
-                const pass = prompt("Enter your WordPress Application Password (xxxx xxxx xxxx xxxx):");
-                if (!pass) return;
-                auth = btoa(`${user}:${pass.replace(/\s/g, '')}`);
-                localStorage.setItem('wp_auth', auth);
-            }
+            const auth = getAuthToken();
+            if (!auth) return;
 
             btn.disabled = true;
-            btn.innerHTML = "Posting...";
+            btn.innerHTML = editingPostId ? "Updating..." : (selectedMediaFile ? "Uploading..." : "Posting...");
 
             try {
-                const response = await fetch(WP_API_URL, {
-                    method: 'POST',
+                let finalContent = `<p>${contentText.replace(/\n/g, '<br>')}</p>`;
+
+                if (selectedMediaFile) {
+                    const mediaResponse = await fetch('/wp-json/wp/v2/media', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Disposition': `attachment; filename="${selectedMediaFile.name}"`,
+                            'Content-Type': selectedMediaFile.type,
+                            'Authorization': `Basic ${auth}`
+                        },
+                        body: selectedMediaFile
+                    });
+                    
+                    if (!mediaResponse.ok) {
+                        const err = await mediaResponse.json();
+                        throw new Error(`Media upload failed: ${err.message}`);
+                    }
+                    
+                    const mediaData = await mediaResponse.json();
+                    
+                    if (selectedMediaFile.type.startsWith('video/')) {
+                        finalContent += `<video controls src="${mediaData.source_url}"></video>`;
+                    } else {
+                        finalContent += `<img src="${mediaData.source_url}" />`;
+                    }
+                    btn.innerHTML = editingPostId ? "Updating..." : "Posting...";
+                } else if (existingMediaUrl) {
+                    if (existingMediaType === 'video') {
+                        finalContent += `<video controls src="${existingMediaUrl}"></video>`;
+                    } else {
+                        finalContent += `<img src="${existingMediaUrl}" />`;
+                    }
+                }
+
+                const method = editingPostId ? 'PUT' : 'POST';
+                const url = editingPostId ? `${WP_API_URL}/${editingPostId}` : WP_API_URL;
+
+                const response = await fetch(url, {
+                    method: method,
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Basic ${auth}`
                     },
                     body: JSON.stringify({
                         title: title || "New Perspective",
-                        content: content,
+                        content: finalContent,
                         status: 'publish',
                         categories: [parseInt(categoryId)]
                     })
                 });
 
                 if (response.ok) {
-                    document.getElementById('post-title').value = '';
-                    document.getElementById('post-content').value = '';
                     closeModal();
                     await fetchPosts(); // Refresh feed
                 } else {
@@ -486,6 +582,91 @@
                 btn.disabled = false;
                 btn.innerHTML = "Post";
             }
+        }
+
+        async function deletePost(id) {
+            if (!confirm("Are you sure you want to delete this post?")) return;
+            
+            const auth = getAuthToken();
+            if (!auth) return;
+
+            try {
+                const response = await fetch(`${WP_API_URL}/${id}?force=true`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Basic ${auth}`
+                    }
+                });
+
+                if (response.ok) {
+                    await fetchPosts(); // Refresh feed
+                } else {
+                    const err = await response.json();
+                    alert(`Error: ${err.message}`);
+                    if (response.status === 401) localStorage.removeItem('wp_auth');
+                }
+            } catch (e) {
+                alert(`Connection failed: ${e.message}`);
+            }
+        }
+
+        function handleMediaSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            selectedMediaFile = file;
+            existingMediaUrl = null;
+            existingMediaType = null;
+            
+            showMediaPreview(URL.createObjectURL(file), file.type.startsWith('video/') ? 'video' : 'image');
+        }
+
+        function showMediaPreview(url, type) {
+            const previewContainer = document.getElementById('media-preview-container');
+            const previewImg = document.getElementById('media-preview-img');
+            const previewVideo = document.getElementById('media-preview-video');
+            
+            previewContainer.classList.remove('hidden');
+            
+            if (type === 'video') {
+                previewImg.classList.add('hidden');
+                previewVideo.classList.remove('hidden');
+                previewVideo.src = url;
+            } else {
+                previewVideo.classList.add('hidden');
+                previewImg.classList.remove('hidden');
+                previewImg.src = url;
+            }
+        }
+
+        function clearMedia() {
+            selectedMediaFile = null;
+            existingMediaUrl = null;
+            existingMediaType = null;
+            document.getElementById('media-upload').value = '';
+            document.getElementById('media-preview-container').classList.add('hidden');
+            document.getElementById('media-preview-img').src = '';
+            document.getElementById('media-preview-video').src = '';
+        }
+
+        function editPost(id) {
+            const post = allPosts.find(p => p.id === id);
+            if (!post) return;
+            
+            editingPostId = id;
+            document.getElementById('modal-title').innerText = "Edit Post";
+            document.getElementById('post-title').value = post.rawTitle;
+            document.getElementById('post-content').value = post.text;
+            document.getElementById('post-category').value = post.categoryId;
+            document.getElementById('submit-btn').innerText = "Update";
+            
+            clearMedia();
+            if (post.mediaUrl) {
+                existingMediaUrl = post.mediaUrl;
+                existingMediaType = post.mediaType;
+                showMediaPreview(post.mediaUrl, post.mediaType);
+            }
+            
+            document.getElementById('composer-modal').classList.add('active');
         }
 
         function filterContent(category, button) {
@@ -534,6 +715,14 @@
         }
 
         function openModal() {
+            editingPostId = null;
+            document.getElementById('modal-title').innerText = "Create Post";
+            document.getElementById('post-title').value = '';
+            document.getElementById('post-content').value = '';
+            document.getElementById('submit-btn').innerText = "Post";
+            
+            clearMedia();
+            
             document.getElementById('composer-modal').classList.add('active');
             document.getElementById('post-content').focus();
         }
