@@ -341,6 +341,11 @@
         let selectedMediaFile = null;
         let existingMediaUrl = null;
         let existingMediaType = null;
+        
+        let allPosts = [];
+        let currentCategory = 'all';
+        let currentPage = 1;
+        let hasMorePosts = true;
 
         function getAuthToken() {
             let auth = localStorage.getItem('wp_auth');
@@ -410,12 +415,38 @@
             5: 'rabbit'
         };
 
-        async function fetchPosts() {
+        const reverseCategoryMap = {
+            'travel': 1,
+            'vlog': 2,
+            'forex': 3,
+            'music': 4,
+            'rabbit': 5
+        };
+
+        async function fetchPosts(append = false) {
             try {
-                const response = await fetch(`${WP_API_URL}?_embed&per_page=20`);
+                if (!append) {
+                    currentPage = 1;
+                    hasMorePosts = true;
+                    // Don't clear allPosts yet, wait for successful fetch to avoid blank screen
+                }
+
+                const perPage = 10;
+                let url = `${WP_API_URL}?_embed&per_page=${perPage}&page=${currentPage}`;
+                if (currentCategory !== 'all') {
+                    url += `&categories=${reverseCategoryMap[currentCategory]}`;
+                }
+
+                const response = await fetch(url);
+                const totalPages = parseInt(response.headers.get('X-WP-TotalPages') || '1', 10);
+                
+                if (currentPage >= totalPages) {
+                    hasMorePosts = false;
+                }
+
                 const wpPosts = await response.json();
                 
-                allPosts = wpPosts.map(wpPost => {
+                const newPosts = wpPosts.map(wpPost => {
                     const media = getPostMedia(wpPost);
                     const text = getPostText(wpPost.content.rendered);
                     const formatted = formatContent(text);
@@ -446,6 +477,12 @@
                         wpLink: wpPost.link
                     };
                 });
+
+                if (append) {
+                    allPosts = [...allPosts, ...newPosts];
+                } else {
+                    allPosts = newPosts;
+                }
                 
                 renderPosts();
             } catch (error) {
@@ -459,13 +496,19 @@
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
+        async function loadMorePosts() {
+            if (!hasMorePosts) return;
+            currentPage++;
+            const btn = document.getElementById('load-more-btn');
+            if (btn) btn.innerHTML = "Loading...";
+            await fetchPosts(true);
+        }
+
         function renderPosts() {
             const container = document.getElementById('posts-container');
             container.innerHTML = '';
             
-            const filteredPosts = allPosts.filter(post => 
-                currentCategory === 'all' || post.category === currentCategory
-            );
+            const filteredPosts = allPosts; // Already filtered via WP API
 
             if (filteredPosts.length === 0) {
                 container.innerHTML = `
@@ -537,6 +580,17 @@
                 `;
                 container.appendChild(postEl);
             });
+
+            if (hasMorePosts && filteredPosts.length > 0) {
+                const loadMoreContainer = document.createElement('div');
+                loadMoreContainer.className = 'text-center pt-2 pb-6';
+                loadMoreContainer.innerHTML = `
+                    <button id="load-more-btn" onclick="loadMorePosts()" class="px-6 py-2 bg-[var(--hover-bg)] text-[var(--text-primary)] rounded-full font-medium text-sm hover:bg-blue-50 hover:text-blue-600 transition-colors">
+                        Load More Posts
+                    </button>
+                `;
+                container.appendChild(loadMoreContainer);
+            }
         }
 
         async function submitPost() {
@@ -550,6 +604,11 @@
             const auth = getAuthToken();
             if (!auth) return;
 
+            // Optional: reset to 'all' or switch to the category they just posted in
+            // For now, we leave the feed on the current category.
+            // If they are on a different category tab, they might not see their post immediately
+            // unless we force switch or just fetch the current view.
+            
             btn.disabled = true;
             btn.innerHTML = editingPostId ? "Updating..." : (selectedMediaFile ? "Uploading..." : "Posting...");
 
@@ -736,14 +795,25 @@
             document.getElementById('composer-modal').classList.add('active');
         }
 
-        function filterContent(category, button) {
-            const buttons = document.querySelectorAll('nav button');
-            buttons.forEach(btn => btn.classList.remove('active-tab'));
-            button.classList.add('active-tab');
-
+        function filterContent(category, btn) {
             currentCategory = category;
-            renderPosts();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            // Update active state
+            document.querySelectorAll('.overflow-x-auto button').forEach(b => {
+                b.classList.remove('bg-blue-100', 'text-blue-700', 'border-blue-200');
+                b.classList.add('hover:bg-[var(--hover-bg)]');
+                b.style.border = '1px solid transparent';
+            });
+            
+            btn.classList.remove('hover:bg-[var(--hover-bg)]');
+            btn.classList.add('bg-blue-100', 'text-blue-700', 'border-blue-200');
+            btn.style.border = '1px solid currentColor';
+
+            // Show loading state immediately
+            const container = document.getElementById('posts-container');
+            container.innerHTML = `<div class="text-center p-8 text-[var(--text-secondary)]">Loading...</div>`;
+
+            fetchPosts(false);
         }
 
         function toggleLike(postId, button) {
